@@ -1,0 +1,7 @@
+type Query {
+    name : String
+}
+
+extend type Query {
+    extendName : String
+}

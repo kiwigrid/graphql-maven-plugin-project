@@ -13,5 +13,6 @@ logs/
 pom.xml.releaseBackup
 release.properties
 
+# idea
 *.iml
-idea
+.idea
