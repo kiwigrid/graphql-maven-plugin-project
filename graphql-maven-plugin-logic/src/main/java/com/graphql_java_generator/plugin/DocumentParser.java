@@ -7,12 +7,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.annotation.PostConstruct;
 import javax.persistence.Entity;
 
+import org.apache.commons.lang.NotImplementedException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -67,6 +69,7 @@ import graphql.language.ListType;
 import graphql.language.Node;
 import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.OperationTypeDefinition;
 import graphql.language.ScalarTypeDefinition;
 import graphql.language.SchemaDefinition;
@@ -202,6 +205,8 @@ public class DocumentParser {
 	 */
 	List<BatchLoader> batchLoaders = new ArrayList<>();
 
+	private Map<String, List<ObjectType>> extensions = new HashMap<>();
+
 	@PostConstruct
 	public void postConstruct() {
 
@@ -288,6 +293,29 @@ public class DocumentParser {
 
 		// Let's finalize some "details":
 
+		// Process extensions
+		for (Map.Entry<String, List<ObjectType>> entry : extensions.entrySet()) {
+			Map<String, ObjectType> types = null;
+			switch (entry.getKey()) {
+			case "query":
+				types = this.queryTypes.stream().collect(Collectors.toMap(ObjectType::getName, Function.identity()));
+				break;
+			default:
+				throw new NotImplementedException("Extensions for " + entry.getKey() + " not implemented yet.");
+			}
+			for (ObjectType extension : entry.getValue()) {
+				ObjectType type = types.get(extension.getName());
+				if (type != null) {
+					type.getFields().addAll(extension.getFields());
+					type.getImplementz().addAll(extension.getImplementz());
+					type.getAppliedDirectives().addAll(extension.getAppliedDirectives());
+					type.getMemberOfUnions().addAll(extension.getMemberOfUnions());
+				} else {
+					throw new IllegalStateException("could not find type to extend: " + extension.getName());
+				}
+			}
+		}
+
 		// Add introspection capabilities (the introspection schema has already been read, as it is added by
 		// ResourceSchemaStringProvider in the documents list
 		addIntrospectionCapabilities();
@@ -365,7 +393,13 @@ public class DocumentParser {
 				if (queryObjectNames.contains(name) || DEFAULT_QUERY_NAME.equals(name)) {
 					ObjectType query = readObjectType((ObjectTypeDefinition) node);
 					query.setRequestType("query");
-					queryTypes.add(query);
+					if (node instanceof ObjectTypeExtensionDefinition) {
+						List<ObjectType> e = extensions.getOrDefault("query", new ArrayList<>());
+						e.add(query);
+						extensions.put("query", e);
+					} else {
+						queryTypes.add(query);
+					}
 				} else if (mutationObjectNames.contains(name) || DEFAULT_MUTATION_NAME.equals(name)) {
 					ObjectType mutation = readObjectType((ObjectTypeDefinition) node);
 					mutation.setRequestType("mutation");
